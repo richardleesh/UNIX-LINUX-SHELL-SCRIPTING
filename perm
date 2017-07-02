@@ -1,0 +1,336 @@
+#!/bin/bash
+# Assignment 2
+# Course:                UNX510
+# Family Name:           
+# Given Name:            YonG
+# Student Number:        *******
+# Login name:            *******
+# Professor:             Les Czegel
+# Due Date:              June 16, 2017
+#
+# I declare that the attached assignment is my own work in accordance with
+# Seneca Academic Policy.  No part of this assignment has been copied manually
+# or electronically from any other source (including web sites) or distributed
+# to other students.
+
+
+# get the directiory
+
+if [[ $# > 1 ]]
+then
+	echo "Usage: pathdisplay [ dir-name ]" >&2
+	exit 1
+fi
+
+path_name=
+if [[ $# = 0 ]]
+then
+    path_name="$(pwd)"
+else
+	if [ ! -e $1 -o ! -d $1 ]
+	then
+		echo "$1 is not a valid directory name" >&2
+		exit 1
+	else
+		path_name=$1
+	fi
+fi
+
+# get absolute path
+
+if [ -x $path_name ]
+then
+	cd $path_name
+	path_name=$( pwd )
+	cd -
+else
+	if grep '/' <<< $path_name
+	then
+		parent_dir="$( echo -n $path_name | sed -nr 's/[^/]*$// p' )"
+		dir="$( echo -n $path_name | sed -nr 's/^'$parent_dir'// p'  )"
+		path_name=$parent_dir$dir
+	else
+		parent_dir="$( pwd )"
+		dir=$path_name
+		path_name=$parent_dir'/'$dir
+	fi
+fi
+
+
+# parse the path name
+
+paths=
+first_char="$(cut -c1 <<< $path_name )"
+
+paths=$paths'/ '
+
+#remove leading forward slash
+	path_name="$( sed -n 's/^\/// p' <<< $path_name)"
+
+# replace rest of / with space
+if grep '/' <<< $path_name > /dev/null
+then
+	path_name="$( sed -n 's/\// / gp' <<< $path_name)"
+fi
+
+
+
+
+#get a space seperated paths string	
+paths=$paths$path_name
+
+#check how many fiels in the paths string
+num_of_fields="$( awk -F' ' 'NR == 1 { print NF }' <<< $paths )"
+
+count=1
+cur_path=
+path_list=
+
+pathlist () {
+for p in $paths
+do
+	if [[ $count = 1 ]] 
+	then
+		 cur_path="$cur_path""$p"
+		 cur_path_info=$( echo "$( ls -ld $cur_path )") 
+		 count=$(( count + 1 ))
+	elif [[ $count = 2 ]]
+	then
+		if [[  $first_char = '/' ]]
+		then 
+			cur_path="$cur_path""$p"
+		else
+			cur_path="$cur_path"/"$p"
+		fi
+		cur_path_info=$( echo "$( ls -ld $cur_path )") 
+		count=$(( count + 1 ))
+	else
+		cur_path=$cur_path/$p
+		
+		cur_path_info=$( echo "$( ls -ld $cur_path )" ) 
+		count=$(( count + 1 ))
+
+	fi
+
+    #format path lsit
+	path_list="$path_list
+
+$(  echo $cur_path_info | sed -n 's/^d// p' | awk -F' ' '{ print $1, $9 }' |
+    sed -nr 's/([^/ ]*.)$/ \1/ p'| awk -F' ' '{ print $1, $NF }' | 
+    sed -nr 's/^(.)(.)(.)(.)(.)(.)(.)(.)(.) /\1 \2 \3   \4 \5 \6   \7 \8 \9   / p' |
+	cut -c1-$(( $( tput cols) + 0 ))
+)"
+
+done
+
+}
+
+
+pathlist
+
+# display function show()
+
+header="Owner   Group   Other   Filename
+-----   -----   -----   --------"
+
+display="$header$path_list"
+
+#last line of paths list 
+last_line_number=$( echo "$display" | wc -l )
+
+current_line_number=$last_line_number
+current_col_number=24
+path_info=
+
+show (){
+
+	clear
+	count=1
+	cur_path=
+	path_list=
+	pathlist
+	display="$header$path_list"
+
+    echo "$display"
+
+           
+    tput cup $(( $( tput lines )- 4 ))  0
+    echo -n "Valid keys: k (up), j (down): move between filenames
+            h (left), l (right): move between permissions
+            r, w, x, -: change permissions;   q: quit"
+
+    tput cup $(( $current_line_number )) 0
+
+
+    cur_dir_name="$( echo -n "$display" | sed -n "$current_line_number"' p' | tr -s ' '  |awk -F' ' '{ print $10 } ')"
+
+	
+	if [ "$cur_dir_name" = '/' ]
+
+	then
+		path_info=$cur_dir_name
+	else
+		path_info="$(  tr ' ' '/'  <<< $paths | sed -nr 's/^\/// p'|  sed -nr "s/($cur_dir_name)($|[/].*$)/\1/ p" )"
+	
+	fi
+
+
+	echo -n "$( ls -ld --time-style=+%b\ %d\ %Y $path_info | tr -s ' ' |
+			awk  '{ printf "Links: %s Owner: %s Group: %s Size: %s Modified: %s %s %s" , $2, $3, $4, $5, $6, $7,$8 }')"
+
+
+    tput cup $(( $current_line_number - 1 )) $(( $current_col_number ))
+}
+
+show
+
+
+oldsettings=$(stty -g)
+stty -icanon  min 1 time 0 -echo
+cmd=
+
+while [ "$cmd" != 'q' ]
+do
+    if [ "$cmd" = 'k' ]
+    then
+		 
+		 if (( $current_line_number > 4 ))
+         then
+           
+			tput cuu 2
+           	current_line_number=$(( $current_line_number - 2 ))
+		
+            show
+			
+
+		fi
+
+    elif [  "$cmd" = 'j' ]
+    then
+        if (( $current_line_number  < $last_line_number ))
+        then
+            tput cud 2
+            current_line_number=$(( current_line_number + 2 ))
+
+		    show
+        fi
+
+	elif [  "$cmd" = 'h' ]
+    then
+        if (( $current_col_number == 24 ))
+        then
+			current_col_number=$(( current_col_number - 4 ))
+		    show
+		elif (( $current_col_number == 16 ))
+        then
+			current_col_number=$(( current_col_number - 4 ))
+		    show
+		elif (( $current_col_number == 8 ))
+        then
+			current_col_number=$(( current_col_number - 4 ))
+		    show
+
+		elif (( $current_col_number == 0 ))
+        then
+		    show
+		else
+			current_col_number=$(( current_col_number - 2 ))
+		 	show
+        fi
+
+	elif [  "$cmd" = 'l' ]
+    then
+        if (( $current_col_number == 24 ))
+        then
+		    show
+		elif (( $current_col_number == 20 ))
+        then
+			current_col_number=$(( current_col_number + 4 ))
+		    show
+		elif (( $current_col_number == 12 ))
+        then
+			current_col_number=$(( current_col_number + 4 ))
+		    show
+
+		elif (( $current_col_number == 4 ))
+        then
+			current_col_number=$(( current_col_number + 4 ))
+		    show
+		else
+			current_col_number=$(( current_col_number + 2 ))
+		 	show
+        fi  
+
+	elif [ "$cmd" = 'r' -o  "$cmd" = 'w' -o  "$cmd" = 'x' -o "$cmd" = '-' ]
+	then
+		if [ "$cmd" = 'r' ]
+		then
+			if (( $current_col_number == 0 ))
+			then
+				chmod u+r $path_info
+			elif (( $current_col_number == 8 )) 
+			then
+				chmod g+r $path_info
+			elif (( $current_col_number == 16 ))
+        	then
+				chmod o+r $path_info
+			fi
+		elif [ "$cmd" = "w" ]
+		then
+			if (( $current_col_number == 2 ))
+			then
+				
+				chmod u+w $path_info
+			elif (( $current_col_number == 10 )) 
+			then
+				chmod g+w $path_info
+			elif (( $current_col_number == 18 ))
+        	then
+				chmod o+w $path_info
+			fi
+        elif [ "$cmd" = "x" ]
+		then
+			if (( $current_col_number == 4 ))
+			then
+				chmod u+x $path_info
+			elif (( $current_col_number == 12 )) 
+			then
+				chmod g+x $path_info
+			elif (( $current_col_number == 20 ))
+        	then
+				chmod o+x $path_info
+			fi
+		elif [ "$cmd" = "-" ]
+		then
+			case $current_col_number  in 
+				0) chmod u-r $path_info ;;
+				2) chmod u-w $path_info ;;
+				4) chmod u-x $path_info ;;
+				8) chmod g-r $path_info ;;
+				10) chmod g-w $path_info ;;
+				12) chmod g-x $path_info ;;
+				16) chmod o-r $path_info ;;
+				18) chmod o-w $path_info ;;
+				20) chmod o-x $path_info ;;
+
+			esac
+
+        fi
+		show
+
+    fi
+
+
+    cmd=$( dd bs=1 count=1 2> /dev/null )
+done
+tput cup $(tput lines) 0
+
+stty $oldsettings
+
+exit 0
+
+
+
+
+
+
